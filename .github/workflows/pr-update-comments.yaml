@@ -1,0 +1,14 @@
+name: Jira PR Update
+on:
+  pull_request:
+    types: [opened, reopened, review_requested, ready_for_review, closed]
+  pull_request_review:
+    types: [submitted]
+jobs:
+  jira-pr-update:
+    uses: ImpactInc/actions/.github/workflows/pr-update-comment.shared.yaml@stable
+    with:
+      gcp_project_id: orgmgt-cicd
+      jira_email_secret_name: jira-sa-ci-email
+      jira_api_token_secret_name: jira-sa-ci-token
+      jira_cloud_id_secret_name: jira-sa-ci-cloud-id

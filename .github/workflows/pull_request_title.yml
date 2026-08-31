@@ -1,0 +1,19 @@
+name: PR Lint
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  pr-lint:
+    runs-on: ubuntu-latest
+    steps:
+      # https://github.com/MorrisonCole/pr-lint-action
+      - uses: morrisoncole/pr-lint-action@v1.7.1
+        with:
+          title-regex: "^([A-Z]+[A-Z0-9]*)-\\d+|INTERNAL"
+          on-failed-regex-request-changes: false
+          on-failed-regex-fail-action: false
+          on-failed-regex-create-review: true
+          on-failed-regex-comment: "PR title does not follow convention: `%regex%`"
+          repo-token: "${{secrets.GITHUB_TOKEN}}"
