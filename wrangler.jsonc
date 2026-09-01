@@ -1,8 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "impact-partner-edge-function",
-  "main": "index.js",
-  "no_bundle": true,
+  "main": "src/index.js",
   "compatibility_date": "2026-08-17",
   "workers_dev": true
 

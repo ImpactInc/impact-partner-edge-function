@@ -1,0 +1,23 @@
+{
+  "name": "impact-edge-function-ai-telemetry",
+  "version": "0.1.14",
+  "private": true,
+  "description": "Impact.com's Chatbot Detection Worker, a Cloudflare Worker that detects chatbot traffic for attribution data collection.",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "coverage": "vitest run --coverage",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "login": "wrangler login",
+    "tail": "wrangler tail",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@rolldown/binding-wasm32-wasi": "1.2.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "vitest": "^4.1.10",
+    "wrangler": "4.123.0"
+  }
+}
