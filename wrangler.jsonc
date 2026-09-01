@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "impact-partner-edge-function",
+  "main": "worker.js",
+  "no_bundle": true,
+  "compatibility_date": "2026-08-17",
+  "workers_dev": true
+
+  // Customize for your deployment:
+  // - Change "name" to your preferred worker name
+  // - Add routes, domains, and bindings as needed
+  // - Set IMPACT_AUTH_TOKEN as a Worker secret in Cloudflare (not here)
+}
