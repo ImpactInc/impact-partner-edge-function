@@ -1,6 +1,6 @@
 {
   "name": "impact-edge-function-ai-telemetry",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
   "description": "Impact.com's Chatbot Detection Worker, a Cloudflare Worker that detects chatbot traffic for attribution data collection.",
   "main": "src/index.js",
