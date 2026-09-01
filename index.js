@@ -1,4 +1,316 @@
-var A=Object.defineProperty;var i=(e,t)=>A(e,"name",{value:t,configurable:!0});var w=(e,t)=>()=>{try{return t||e((t={exports:{}}).exports,t),t.exports}catch(r){throw t=0,r}};var T=w((Y,x)=>{x.exports={name:"impact-edge-function-ai-telemetry",version:"0.1.12",private:!0,description:"Impact.com's Chatbot Detection Worker, a Cloudflare Worker that detects chatbot traffic for attribution data collection.",main:"src/index.js",scripts:{build:"wrangler deploy --dry-run --minify --outdir dist",coverage:"vitest run --coverage",dev:"wrangler dev",deploy:"wrangler deploy",login:"wrangler login",tail:"wrangler tail",test:"vitest run","test:watch":"vitest"},devDependencies:{"@rolldown/binding-wasm32-wasi":"1.2.1","@vitest/coverage-v8":"^4.1.10",vitest:"^4.1.10",wrangler:"4.123.0"}}});function E(e){return{cfRayId:a(e.rayId),cfCountry:a(e.country),cfVerifiedBotCategory:a(e.verifiedBotCategory),cfBot:a(e.bot)}}i(E,"getCloudflarePayload");function C(e){return e?{cfBotScore:a(e.score),cfVerifiedBot:a(e.verifiedBot),cfSignedAgent:a(e.signedAgent),cfJa4:a(e.ja4),cfJsDetectionPassed:a(e.jsDetection&&e.jsDetection.passed)}:{cfBotScore:null,cfVerifiedBot:null,cfSignedAgent:null,cfJa4:null,cfJsDetectionPassed:null}}i(C,"getBotPayload");function f(e,t,r){let n=e.cf||{},o=new URL(e.url),c=e.headers.get("user-agent")||"",s=E(n),d=C(n.botManagement),u=e.headers.get("signature-input")||null;return{accountId:r.ACCOUNT_ID,pageUrl:o.href,userAgent:c,eventDate:new Date().toISOString(),workerVersion:r.VERSION,ipAddress:e.headers.get("cf-connecting-ip")||null,responseStatus:t.status,responseBytes:t.headers.get("content-length")||null,webBotAuthSignature:e.headers.get("signature")||null,webBotAuthSignatureAgent:e.headers.get("signature-agent")||null,webBotAuthSignatureInput:u,webBotAuthCoveredHeaders:B(u,e.headers),...s,...d}}i(f,"build");function a(e){return e===void 0?null:e}i(a,"valueOrNull");function B(e,t){if(!e)return"{}";let r=e.match(/(sig(?:\d+)|signature)=\(([^)]*)/);return!r||r.length<3?"{}":JSON.stringify(r[2].split(" ").map(n=>n.replaceAll('"',"").trim()).reduce((n,o)=>{try{n[o]=t.get(o.toLowerCase())||null}catch{n[o]=null}return n},{}))}i(B,"extractWebBotAuthCoveredHeaders");function l(e){return{url:typeof e=="function"?e:()=>e,method:i(t=>t,"method"),headers:i(t=>t,"headers"),body:i(t=>JSON.stringify(t),"body")}}i(l,"noAuth");function m(e,t){return{...l(e),headers:i((r,n)=>({...r,Authorization:`Bearer ${n?"API_TOKEN_GOES_HERE":t}`}),"headers")}}i(m,"withAuthBearerToken");function g(e,t){return Promise.all(e.map(async r=>{if(r){try{typeof r=="string"&&(r=l(r));let n=r.url(t);new URL(n);let o=r.method("POST"),c=r.body(t),s=r.headers({"Content-Length":new TextEncoder().encode(c).length.toString(),"Content-Type":"application/json"});return await fetch(n,{method:o,headers:s,body:c}),!0}catch{}return!1}}))}i(g,"post");var I=new RegExp(["amazonbot","applebot-extended","anthropic-ai","claude(bot|-(code|searchbot|user|web))","gemini-deep-research","google-(extended|cloudvertexbot)","xai-grok","grok(bot|-(deepsearch|search))","gptbot","chatgpt-(user|crawler)","oai-(search|ads)bot","perplexity-(user|crawler)","perplexitybot","bytespider"].join("|"),"i");function h(e){let t=e.cf||{},r=(t.botManagement||{}).verifiedBot;return t.bot||r||I.test(e.headers.get("user-agent")||"")}i(h,"isChatbotUserAgent");function S(e,t){return e.reduce((r,n)=>{try{typeof n=="string"&&(n=l(n));let o=n.url(t,!0);try{new URL(o)}catch{throw new Error(`Invalid URL: ${o}`)}let c=n.body({...t,responseStatus:204,responseBytes:0},!0),s=n.headers({"Content-Length":new TextEncoder().encode(c).length.toString(),"Content-Type":"application/json"},!0),d=Object.entries(s).map(([u,b])=>`-H "${u}: ${b}"`).join(" ");r.push(`curl ${d} '${o}'${c?` -d '${c}'`:""}`)}catch(o){r.push(`Error generating curl command for endpoint[${r.length}]: ${o.message}`)}return r},[])}i(S,"buildOutput");function v(e){return!e||!e.headers?!1:(e.headers.get("content-type")||"").toLowerCase().startsWith("text/html")}i(v,"isHtmlResponse");function y(e,t,r,n){if(!e)return;let o=S(r,n);if(v(t)&&(console.log("Impact.com Telemetry Output:"),o.forEach(s=>console.log(s)),console.log("-----")),new URL(e.url).pathname==="/impactDebug"){let s=o.join(`
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+var __commonJS = (cb, mod) => function __require() {
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
+};
 
-`);return new Response(s,{status:200,headers:{"Content-Type":"text/plain;charset=UTF-8","Content-Length":new TextEncoder().encode(s).length.toString()}})}}i(y,"debug");var P=T(),R="https://trkapi.impact.com/telemetry/crawler-visits";function p(e){return{ACCOUNT_ID:e.IMPACT_ACCOUNT_ID,DEBUG:e.IMPACT_DEBUG===!0||e.IMPACT_DEBUG==="true",TELEMETRY_APIS:e.IMPACT_AUTH_TOKEN?[m(R,e.IMPACT_AUTH_TOKEN)]:[],VERSION:P.version}}i(p,"default");var q={async fetch(e,t,r){let n=await fetch(e),o=p(t);if(!Array.isArray(o.TELEMETRY_APIS)||o.TELEMETRY_APIS.length===0)return console.log("No telemetry API URLs provided"),n;if(o.DEBUG){let c=await y(e,n,o.TELEMETRY_APIS,f(e,n,o));if(c)return c}return h(e)&&r.waitUntil(g(o.TELEMETRY_APIS,f(e,n,o))),n}};export{q as default};
+// package.json
+var require_package = __commonJS({
+  "package.json"(exports, module) {
+    module.exports = {
+      name: "impact-edge-function-ai-telemetry",
+      version: "0.1.13",
+      private: true,
+      description: "Impact.com's Chatbot Detection Worker, a Cloudflare Worker that detects chatbot traffic for attribution data collection.",
+      main: "src/index.js",
+      scripts: {
+        build: "wrangler deploy --dry-run --outdir dist",
+        coverage: "vitest run --coverage",
+        dev: "wrangler dev",
+        deploy: "wrangler deploy",
+        login: "wrangler login",
+        tail: "wrangler tail",
+        test: "vitest run",
+        "test:watch": "vitest"
+      },
+      devDependencies: {
+        "@rolldown/binding-wasm32-wasi": "1.2.1",
+        "@vitest/coverage-v8": "^4.1.10",
+        vitest: "^4.1.10",
+        wrangler: "4.123.0"
+      }
+    };
+  }
+});
+
+// src/payload.js
+function getCloudflarePayload(data) {
+  return {
+    cfRayId: valueOrNull(data.rayId),
+    cfCountry: valueOrNull(data.country),
+    cfVerifiedBotCategory: valueOrNull(data.verifiedBotCategory),
+    cfBot: valueOrNull(data.bot)
+  };
+}
+__name(getCloudflarePayload, "getCloudflarePayload");
+function getBotPayload(data) {
+  if (!data) {
+    return {
+      cfBotScore: null,
+      cfVerifiedBot: null,
+      cfSignedAgent: null,
+      cfJa4: null,
+      cfJsDetectionPassed: null
+    };
+  }
+  return {
+    cfBotScore: valueOrNull(data.score),
+    cfVerifiedBot: valueOrNull(data.verifiedBot),
+    cfSignedAgent: valueOrNull(data.signedAgent),
+    cfJa4: valueOrNull(data.ja4),
+    cfJsDetectionPassed: valueOrNull(data.jsDetection && data.jsDetection.passed)
+  };
+}
+__name(getBotPayload, "getBotPayload");
+function build(request, response, config) {
+  const data = request.cf || {};
+  const url = new URL(request.url);
+  const userAgent = request.headers.get("user-agent") || "";
+  const cloudflarePayload = getCloudflarePayload(data);
+  const botPayload = getBotPayload(data.botManagement);
+  const webBotAuthSignatureInput = request.headers.get("signature-input") || null;
+  return {
+    accountId: config.ACCOUNT_ID,
+    pageUrl: url.href,
+    userAgent,
+    eventDate: (/* @__PURE__ */ new Date()).toISOString(),
+    workerVersion: config.VERSION,
+    ipAddress: request.headers.get("cf-connecting-ip") || null,
+    responseStatus: response.status,
+    responseBytes: response.headers.get("content-length") || null,
+    webBotAuthSignature: request.headers.get("signature") || null,
+    webBotAuthSignatureAgent: request.headers.get("signature-agent") || null,
+    webBotAuthSignatureInput,
+    webBotAuthCoveredHeaders: extractWebBotAuthCoveredHeaders(webBotAuthSignatureInput, request.headers),
+    ...cloudflarePayload,
+    ...botPayload
+  };
+}
+__name(build, "build");
+function valueOrNull(value) {
+  return value === void 0 ? null : value;
+}
+__name(valueOrNull, "valueOrNull");
+function extractWebBotAuthCoveredHeaders(signatureAgent, headers) {
+  if (!signatureAgent) {
+    return "{}";
+  }
+  const match = signatureAgent.match(/(sig(?:\d+)|signature)=\(([^)]*)/);
+  if (!match || match.length < 3) {
+    return "{}";
+  }
+  return JSON.stringify(
+    match[2].split(" ").map((header) => header.replaceAll('"', "").trim()).reduce((gathered, key) => {
+      try {
+        gathered[key] = headers.get(key.toLowerCase()) || null;
+      } catch (e) {
+        gathered[key] = null;
+      }
+      return gathered;
+    }, {})
+  );
+}
+__name(extractWebBotAuthCoveredHeaders, "extractWebBotAuthCoveredHeaders");
+
+// src/auth.js
+function noAuth(url) {
+  return {
+    url: typeof url === "function" ? url : () => url,
+    method: /* @__PURE__ */ __name((value) => value, "method"),
+    headers: /* @__PURE__ */ __name((value) => value, "headers"),
+    body: /* @__PURE__ */ __name((payload) => JSON.stringify(payload), "body")
+  };
+}
+__name(noAuth, "noAuth");
+function withAuthBearerToken(url, token) {
+  return {
+    ...noAuth(url),
+    headers: /* @__PURE__ */ __name((headers, debug2) => {
+      return {
+        ...headers,
+        "Authorization": `Bearer ${debug2 ? "API_TOKEN_GOES_HERE" : token}`
+      };
+    }, "headers")
+  };
+}
+__name(withAuthBearerToken, "withAuthBearerToken");
+
+// src/post.js
+function post(endpoints, payload) {
+  return Promise.all(
+    endpoints.map(async (endpoint) => {
+      if (!endpoint) {
+        return;
+      }
+      try {
+        if (typeof endpoint === "string") {
+          endpoint = noAuth(endpoint);
+        }
+        const url = endpoint.url(payload);
+        new URL(url);
+        const method = endpoint.method("POST");
+        const body = endpoint.body(payload);
+        const headers = endpoint.headers({
+          "Content-Length": new TextEncoder().encode(body).length.toString(),
+          "Content-Type": "application/json"
+        });
+        await fetch(url, {
+          method,
+          headers,
+          body
+        });
+        return true;
+      } catch (e) {
+      }
+      return false;
+    })
+  );
+}
+__name(post, "post");
+
+// src/chatbot.js
+var CHATBOT_PATTERN = new RegExp(
+  [
+    "amazonbot",
+    "applebot-extended",
+    "anthropic-ai",
+    "claude(bot|-(code|searchbot|user|web))",
+    "gemini-deep-research",
+    "google-(extended|cloudvertexbot)",
+    "xai-grok",
+    "grok(bot|-(deepsearch|search))",
+    "gptbot",
+    "chatgpt-(user|crawler)",
+    "oai-(search|ads)bot",
+    "perplexity-(user|crawler)",
+    "perplexitybot",
+    "bytespider"
+  ].join("|"),
+  "i"
+);
+function isChatbotUserAgent(request) {
+  const cf = request.cf || {};
+  const verifiedBot = (cf.botManagement || {}).verifiedBot;
+  return cf.bot || verifiedBot || CHATBOT_PATTERN.test(request.headers.get("user-agent") || "");
+}
+__name(isChatbotUserAgent, "isChatbotUserAgent");
+
+// src/debug.js
+function buildOutput(endpoints, payload) {
+  return endpoints.reduce((gathered, endpoint) => {
+    try {
+      if (typeof endpoint === "string") {
+        endpoint = noAuth(endpoint);
+      }
+      const url = endpoint.url(payload, true);
+      try {
+        new URL(url);
+      } catch (e) {
+        throw new Error(`Invalid URL: ${url}`);
+      }
+      const body = endpoint.body({ ...payload, responseStatus: 204, responseBytes: 0 }, true);
+      const headers = endpoint.headers({
+        "Content-Length": new TextEncoder().encode(body).length.toString(),
+        "Content-Type": "application/json"
+      }, true);
+      const curlHeaders = Object.entries(headers).map(([key, value]) => `-H "${key}: ${value}"`).join(" ");
+      gathered.push(`curl ${curlHeaders} '${url}'${body ? ` -d '${body}'` : ""}`);
+    } catch (e) {
+      gathered.push(`Error generating curl command for endpoint[${gathered.length}]: ${e.message}`);
+    }
+    return gathered;
+  }, []);
+}
+__name(buildOutput, "buildOutput");
+function isHtmlResponse(response) {
+  if (!response || !response.headers) {
+    return false;
+  }
+  const contentType = response.headers.get("content-type") || "";
+  return contentType.toLowerCase().startsWith("text/html");
+}
+__name(isHtmlResponse, "isHtmlResponse");
+function debug(request, response, endpoints, payload) {
+  if (!request) {
+    return;
+  }
+  const output = buildOutput(endpoints, payload);
+  if (isHtmlResponse(response)) {
+    console.log("Impact.com Telemetry Output:");
+    output.forEach((line) => console.log(line));
+    console.log("-----");
+  }
+  const url = new URL(request.url);
+  if (url.pathname === "/impactDebug") {
+    const body = output.join("\n\n");
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain;charset=UTF-8",
+        "Content-Length": new TextEncoder().encode(body).length.toString()
+      }
+    });
+  }
+}
+__name(debug, "debug");
+
+// src/config.js
+var packageJson = require_package();
+var IMPACT_TELEMETRY_URL = "https://trkapi.impact.com/telemetry/crawler-visits";
+function config_default(env) {
+  return {
+    ACCOUNT_ID: env.IMPACT_ACCOUNT_ID,
+    DEBUG: env.IMPACT_DEBUG === true || env.IMPACT_DEBUG === "true",
+    TELEMETRY_APIS: env.IMPACT_AUTH_TOKEN ? [withAuthBearerToken(IMPACT_TELEMETRY_URL, env.IMPACT_AUTH_TOKEN)] : [],
+    VERSION: packageJson.version
+  };
+}
+__name(config_default, "default");
+
+// src/index.js
+var index_default = {
+  /**
+   * @param {Request} request
+   * @param {object} env Worker environment bindings passed into config (secrets, vars).
+   * @param {ExecutionContext} ctx
+   * @returns {Promise<Response>}
+   */
+  // eslint-disable-next-line require-await
+  async fetch(request, env, ctx) {
+    const response = await fetch(request);
+    const config = config_default(env);
+    if (!Array.isArray(config.TELEMETRY_APIS) || config.TELEMETRY_APIS.length === 0) {
+      console.log("No telemetry API URLs provided");
+      return response;
+    }
+    if (config.DEBUG) {
+      const debugResponse = await debug(
+        request,
+        response,
+        config.TELEMETRY_APIS,
+        build(request, response, config)
+      );
+      if (debugResponse) {
+        return debugResponse;
+      }
+    }
+    if (isChatbotUserAgent(request)) {
+      ctx.waitUntil(
+        post(
+          config.TELEMETRY_APIS,
+          build(request, response, config)
+        )
+      );
+    }
+    return response;
+  }
+};
+export {
+  index_default as default
+};
 //# sourceMappingURL=index.js.map
