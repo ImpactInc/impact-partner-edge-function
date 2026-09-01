@@ -13,7 +13,7 @@ Pre-built Cloudflare Worker for Impact partner telemetry. Published automaticall
 
 | File | Purpose |
 |---|---|
-| `worker.js` | Pre-built Worker bundle — deployed as-is |
+| `index.js` | Pre-built Worker bundle — deployed as-is |
 | `wrangler.jsonc` | Example Wrangler config — customize for your setup |
 
 ## Updating
