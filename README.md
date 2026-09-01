@@ -29,9 +29,9 @@ If you prefer deploying via GitHub Actions, this repo includes an example workfl
    npx wrangler secret put IMPACT_AUTH_TOKEN --name impact-partner-edge-function
    ```
 4. Enable GitHub Actions on your fork
-5. The workflow deploys automatically on push to `main`, or you can trigger it manually
+5. Go to Actions → "Deploy to Cloudflare" → Run workflow to deploy
 
-To update: sync your fork — the push triggers the deploy workflow.
+To update: sync your fork, then manually trigger the deploy workflow.
 
 ## What's Here
 
