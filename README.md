@@ -1,6 +1,6 @@
-# Impact.com CloudFlare Edge Function
+# Impact.com Cloudflare Edge Function
 
-Welcome to the Impact.com CloudFlare Edge Function! Here you'll have access to the source code, as well as tools for
+Welcome to the Impact.com Cloudflare Edge Function! Here you'll have access to the source code, as well as tools for
 local development, testing, and deployment. This Worker sends AI Telemetry data on your behalf to Impact.com when a
 chatbot is detected. As the end user, you can run this out of the box by setting the minimal configuration values, or
 if you want to customize the behavior, you can modify the source code and deploy your own version of the Worker.
@@ -20,7 +20,7 @@ npm ci
 
 Use `npm i` instead of `npm ci` if you are not working from the lockfile.
 
-Authenticate Wrangler once per machine with via `login` or by setting `CLOUDFLARE_API_TOKEN` in your environment. This is
+Authenticate Wrangler once per machine with `login` or by setting `CLOUDFLARE_API_TOKEN` in your environment. This is
 required for `npm run deploy` and for remote-mode features that talk to your Cloudflare account.
 
 ```bash
@@ -31,12 +31,13 @@ npm run login
 
 Create a `.dev.vars` file in the project root with the same names the Worker reads from `env` (see
 [Environment variables](#environment-variables)). Wrangler loads this file for `wrangler dev`. Do not commit it; it is
-in `.gitignored`.
+in `.gitignore`.
 
 ```bash
 IMPACT_ACCOUNT_ID=your-impact-account-id
 IMPACT_AUTH_TOKEN=your-impact-auth-token
 IMPACT_DEBUG=true
+IMPACT_DEBUG_ENDPOINT=/impactDebug
 ```
 
 Start the local Worker:
@@ -47,12 +48,71 @@ npm run dev
 This runs `wrangler dev`. Requests are handled locally; origin `fetch(request)` still goes to the URL on the incoming
 request.
 
-With `IMPACT_DEBUG` enabled, a chatbot request to `/impactDebug` returns the telemetry curl commands as plain text
-instead of posting. Other chatbot HTML requests log that output and still schedule the telemetry post.
+With `IMPACT_DEBUG` enabled, set `IMPACT_DEBUG_ENDPOINT` to a path (for example `/impactDebug`). A chatbot request to
+that path returns the telemetry curl commands as plain text instead of posting. Other chatbot HTML requests log that
+output and still schedule the telemetry post. If `IMPACT_DEBUG_ENDPOINT` is unset, debug only logs; it never replaces
+the response.
 
 Stream production logs after deploy:
 ```bash
 npm run tail
+```
+
+## Standalone Worker vs Service Bindings
+
+This Worker is a `WorkerEntrypoint` (`ImpactTelemetry` in `src/index.js`). It supports two
+deployment shapes on the same codebase.
+
+### Standalone (no other Worker on the route)
+
+Deploy this Worker with a route. Incoming requests hit `fetch()`, which proxies to origin and then
+reports eligible chatbot HTML visits.
+
+### Service binding (another Worker already owns the route)
+
+Cloudflare allows one Worker per route. If the partner already has a Worker, they must not put this
+Worker on the same route. Deploy this Worker **without** a competing public route, then bind it from
+the existing Worker.
+
+Caller `wrangler.toml` (or `wrangler.jsonc`):
+
+```toml
+[[services]]
+binding = "IMPACT"
+service = "impact-partner-edge-function"
+```
+
+Caller Worker — fetch origin (or produce a response), then pass both into RPC `handle()`. Do **not**
+call `env.IMPACT.fetch(request)` from that Worker: `fetch` always retrieves origin itself, which
+routes back to the caller and loops.
+
+```js
+export default {
+  async fetch(request, env) {
+    // Only paying attention to GET requests
+    if (request.method !== 'GET') {
+      return fetch(request);
+    }
+
+    const response = await fetch(request);
+    return env.IMPACT.handle(request, response);
+  }
+};
+```
+
+`handle()` does not fetch origin. It returns the response the caller should send to the client: the
+original, or the debug curl body when `IMPACT_DEBUG` is enabled and the request path matches
+`IMPACT_DEBUG_ENDPOINT`. Request and Response are valid RPC types; passing `response` transfers
+ownership of its body stream.
+
+Secrets (`IMPACT_AUTH_TOKEN`, `IMPACT_ACCOUNT_ID`) are configured on **this** Worker, not on the
+caller.
+
+Locally, run both Workers so the binding can connect. Either start two `wrangler dev` processes, or
+one process with multiple configs (first config is the HTTP-facing Worker):
+
+```bash
+npx wrangler dev -c ../partner-site/wrangler.toml -c ./wrangler.toml
 ```
 
 ## Tests
@@ -60,6 +120,9 @@ npm run tail
 ```bash
 npm t
 ```
+
+That runs the Node unit tests and a Workers-runtime Service Binding suite (`test/workers/`) that
+calls `env.IMPACT.handle` across two Workers.
 
 Watch mode:
 
@@ -73,8 +136,9 @@ npm run test:watch
 npm run coverage
 ```
 
-This runs the Vitest suite with V8 coverage over `src/**/*.js`. Text output is printed in the terminal; HTML and LCOV
-reports are written to `coverage/`.
+This runs the Node unit tests with V8 coverage over `src/**/*.js`. Text output is printed in the
+terminal; HTML and LCOV reports are written to `coverage/`. The Workers-runtime Service Binding
+suite is excluded because coverage instrumentation cannot run inside `workerd`.
 
 ## Deploy
 
@@ -101,11 +165,12 @@ That runs `wrangler deploy --dry-run --outdir dist` and writes `dist/index.js`.
 `src/config.js` reads these bindings from the Worker `env` object. Sensitive values must be Cloudflare Worker secrets,
 not `vars` in `wrangler.jsonc`.
 
-| Binding             | Required                    | Secret?     | Purpose                                                                                                                        |
-|---------------------|-----------------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `IMPACT_AUTH_TOKEN` | Yes, for telemetry          | Yes         | Bearer token sent to `https://trkapi.impact.com/telemetry/crawler-visits`. If unset, the Worker logs an error and never posts. |
-| `IMPACT_ACCOUNT_ID` | Yes, for a complete payload | Recommended | Impact account ID included on each telemetry event as `accountId`.                                                             |
-| `IMPACT_DEBUG`      | No                          | No          | Enables debug logging and the `/impactDebug` response. Treated as true when the value is `true`, `"true"`, `1`, or `"1"`.      |
+| Binding                 | Required                    | Secret?     | Purpose                                                                                                                        |
+|-------------------------|-----------------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------|
+| `IMPACT_AUTH_TOKEN`     | Yes, for telemetry          | Yes         | Bearer token sent to `https://trkapi.impact.com/telemetry/crawler-visits`. If unset, the Worker logs an error and never posts. |
+| `IMPACT_ACCOUNT_ID`     | Yes, for a complete payload | Recommended | Impact account ID included on each telemetry event as `accountId`.                                                             |
+| `IMPACT_DEBUG`          | No                          | No          | Enables debug logging and, when `IMPACT_DEBUG_ENDPOINT` is also set, the debug response. Treated as true when the value is `true`, `"true"`, `1`, or `"1"`. |
+| `IMPACT_DEBUG_ENDPOINT` | No                          | No          | Request pathname that returns debug curl output instead of posting telemetry (for example `/impactDebug`). Ignored unless `IMPACT_DEBUG` is true. Empty when unset. |
 
 Set secrets interactively (Wrangler prompts for the value; do not pass it on the command line):
 
@@ -114,13 +179,15 @@ npx wrangler secret put IMPACT_AUTH_TOKEN
 npx wrangler secret put IMPACT_ACCOUNT_ID
 ```
 
-`IMPACT_DEBUG` is not sensitive. Prefer a Wrangler variable so you can toggle it without storing it as a secret:
+`IMPACT_DEBUG` and `IMPACT_DEBUG_ENDPOINT` are not sensitive. Prefer a Wrangler variable so you can change it without
+having to store it in a secret. Example in `wrangler.toml`:
 
-```jsonc
-// wrangler.jsonc
-"vars": {
-  "IMPACT_DEBUG": "false"
-}
+```toml
+# wrangler.toml
+[vars]
+IMPACT_DEBUG = "false"
+# Request pathname that returns curl debug output when IMPACT_DEBUG is true.
+IMPACT_DEBUG_ENDPOINT = "/impactDebug"
 ```
 
 Or set it only in `.dev.vars` for local use.

@@ -51,13 +51,13 @@ export function buildDebugOutput(config, payload) {
  * @returns {Response|void}
  */
 export function debug(request, config, payload) {
-  if (!request) {
+  if (!request || !config.DEBUG) {
     return;
   }
 
   const output = buildDebugOutput(config, payload);
   const url = new URL(request.url);
-  if (url.pathname === '/impactDebug') {
+  if (config.DEBUG_ENDPOINT && url.pathname === config.DEBUG_ENDPOINT) {
     const body = output.join('\n\n');
     return new Response(body, {
       status: 200,

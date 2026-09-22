@@ -7,13 +7,26 @@ vi.mock('../src/config.js', () => ({
   default: (...args) => Config(...args)
 }));
 
-import worker from '../src/index.js';
+import ImpactTelemetry from '../src/index.js';
 
-describe('worker.fetch', () => {
+/**
+ * @param {Object} [env]
+ * @returns {{worker: ImpactTelemetry, ctx: {waitUntil: ReturnType<typeof vi.fn>}, env: Object}}
+ */
+function createWorker(env = {}) {
+  const ctx = {waitUntil: vi.fn()};
+  return {
+    worker: new ImpactTelemetry(ctx, env),
+    ctx,
+    env
+  };
+}
+
+describe('ImpactTelemetry.fetch', () => {
   let originResponse;
 
   beforeEach(() => {
-    originResponse = new Response('<html><body>origin</body></html>', {
+    originResponse = new Response('<html lang="en"><body>origin</body></html>', {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=UTF-8',
@@ -40,8 +53,8 @@ describe('worker.fetch', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     Config.mockReturnValue(mockConfig({TELEMETRY_APIS: []}));
 
-    const ctx = {waitUntil: vi.fn()};
-    const response = await worker.fetch(makeRequest('https://shop.example/'), {}, ctx);
+    const {worker, ctx} = createWorker();
+    const response = await worker.fetch(makeRequest('https://shop.example/'));
 
     expect(response).toBe(originResponse);
     expect(ctx.waitUntil).not.toHaveBeenCalled();
@@ -52,8 +65,8 @@ describe('worker.fetch', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     Config.mockReturnValue(mockConfig({TELEMETRY_APIS: null}));
 
-    const ctx = {waitUntil: vi.fn()};
-    const response = await worker.fetch(makeRequest('https://shop.example/'), {}, ctx);
+    const {worker, ctx} = createWorker();
+    const response = await worker.fetch(makeRequest('https://shop.example/'));
 
     expect(response).toBe(originResponse);
     expect(ctx.waitUntil).not.toHaveBeenCalled();
@@ -62,15 +75,13 @@ describe('worker.fetch', () => {
 
   it('returns debug curl output for /impactDebug when DEBUG is enabled on an HTML chatbot request', async() => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
-    Config.mockReturnValue(mockConfig({DEBUG: true}));
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker({IMPACT_AUTH_TOKEN: 'secret'});
     const response = await worker.fetch(
       makeRequest('https://shop.example/impactDebug', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {IMPACT_AUTH_TOKEN: 'secret'},
-      ctx
+      })
     );
 
     expect(ctx.waitUntil).not.toHaveBeenCalled();
@@ -83,19 +94,17 @@ describe('worker.fetch', () => {
   });
 
   it('returns the origin response for /impactDebug when the origin is not HTML', async() => {
-    Config.mockReturnValue(mockConfig({DEBUG: true}));
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
     originResponse = new Response('{"ok":true}', {
       status: 200,
       headers: {'content-type': 'application/json'}
     });
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/impactDebug', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(ctx.waitUntil).not.toHaveBeenCalled();
@@ -104,19 +113,17 @@ describe('worker.fetch', () => {
 
   it('does not post or debug for non-HTML responses even when DEBUG is enabled', async() => {
     const debugLog = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    Config.mockReturnValue(mockConfig({DEBUG: true}));
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
     originResponse = new Response('{"ok":true}', {
       status: 200,
       headers: {'content-type': 'application/json'}
     });
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/api', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(response).toBe(originResponse);
@@ -131,13 +138,11 @@ describe('worker.fetch', () => {
       }
     };
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(response).toBe(originResponse);
@@ -152,13 +157,11 @@ describe('worker.fetch', () => {
       return null;
     });
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(response).toBeNull();
@@ -168,13 +171,11 @@ describe('worker.fetch', () => {
   it('skips telemetry when the origin response has no headers', async() => {
     originResponse = {headers: null};
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(response).toBe(originResponse);
@@ -182,46 +183,44 @@ describe('worker.fetch', () => {
   });
 
   it('treats uppercase TEXT/HTML as an HTML document', async() => {
-    originResponse = new Response('<html></html>', {
+    originResponse = new Response('<html lang="en"></html>', {
       status: 200,
       headers: {'content-type': 'TEXT/HTML'}
     });
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     await worker.fetch(
       makeRequest('https://shop.example/', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
   });
 
   it('does not enter debug mode when DEBUG is false', async() => {
-    Config.mockReturnValue(mockConfig({DEBUG: false}));
+    const debugLog = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    Config.mockReturnValue(mockConfig({DEBUG: false, DEBUG_ENDPOINT: '/impactDebug'}));
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/impactDebug', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(response).toBe(originResponse);
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
+    expect(debugLog).not.toHaveBeenCalled();
   });
 
   it('schedules telemetry posts for chatbot requests', async() => {
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const request = makeRequest('https://shop.example/', {
       headers: {'user-agent': 'GPTBot/1.0'}
     });
 
-    const response = await worker.fetch(request, {}, ctx);
+    const response = await worker.fetch(request);
 
     expect(response).toBe(originResponse);
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
@@ -234,41 +233,52 @@ describe('worker.fetch', () => {
   });
 
   it('schedules telemetry posts when Cloudflare marks the request as a bot', async() => {
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const request = makeRequest('https://shop.example/', {
       headers: {'user-agent': 'Mozilla/5.0'},
       cf: {bot: true}
     });
 
-    await worker.fetch(request, {}, ctx);
+    await worker.fetch(request);
 
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
   });
 
   it('passes through without posting for non-chatbot requests', async() => {
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const request = makeRequest('https://shop.example/', {
       headers: {'user-agent': 'Mozilla/5.0 Chrome/120.0.0.0'}
     });
 
-    const response = await worker.fetch(request, {}, ctx);
+    const response = await worker.fetch(request);
 
     expect(response).toBe(originResponse);
     expect(ctx.waitUntil).not.toHaveBeenCalled();
     expect(fetch.mock.calls.every(([, init]) => !init)).toBe(true);
   });
 
+  it('skips telemetry for non-GET requests', async() => {
+    const {worker, ctx} = createWorker();
+    const response = await worker.fetch(
+      makeRequest('https://shop.example/', {
+        method: 'POST',
+        headers: {'user-agent': 'GPTBot/1.0'}
+      })
+    );
+
+    expect(response).toBe(originResponse);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+  });
+
   it('skips debug logging for non-chatbot HTML requests even when DEBUG is enabled', async() => {
     const debugLog = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    Config.mockReturnValue(mockConfig({DEBUG: true}));
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/', {
         headers: {'user-agent': 'Mozilla/5.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(response).toBe(originResponse);
@@ -278,15 +288,13 @@ describe('worker.fetch', () => {
 
   it('returns debug output even when the debug request looks like a chatbot', async() => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
-    Config.mockReturnValue(mockConfig({DEBUG: true}));
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     const response = await worker.fetch(
       makeRequest('https://shop.example/impactDebug', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(ctx.waitUntil).not.toHaveBeenCalled();
@@ -295,15 +303,13 @@ describe('worker.fetch', () => {
 
   it('posts telemetry when DEBUG is enabled but the path is not /impactDebug', async() => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
-    Config.mockReturnValue(mockConfig({DEBUG: true}));
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
 
-    const ctx = {waitUntil: vi.fn()};
+    const {worker, ctx} = createWorker();
     await worker.fetch(
       makeRequest('https://shop.example/', {
         headers: {'user-agent': 'GPTBot/1.0'}
-      }),
-      {},
-      ctx
+      })
     );
 
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
@@ -311,13 +317,139 @@ describe('worker.fetch', () => {
   });
 
   it('forwards the original request to fetch unchanged', async() => {
-    const ctx = {waitUntil: vi.fn()};
+    const {worker} = createWorker();
     const request = makeRequest('https://shop.example/path', {
       headers: {'user-agent': 'Mozilla/5.0'}
     });
 
-    await worker.fetch(request, {}, ctx);
+    await worker.fetch(request);
 
     expect(fetch).toHaveBeenCalledWith(request);
+  });
+
+  it('reads secrets from this.env rather than a fetch argument', async() => {
+    const {worker} = createWorker({IMPACT_ACCOUNT_ID: 'from-this-env'});
+    await worker.fetch(
+      makeRequest('https://shop.example/', {
+        headers: {'user-agent': 'GPTBot/1.0'}
+      })
+    );
+
+    expect(Config).toHaveBeenCalledWith({IMPACT_ACCOUNT_ID: 'from-this-env'});
+  });
+});
+
+describe('ImpactTelemetry.handle', () => {
+  let originResponse;
+
+  beforeEach(() => {
+    originResponse = new Response('<html lang="en"><body>origin</body></html>', {
+      status: 200,
+      headers: {
+        'content-type': 'text/html; charset=UTF-8',
+        'content-length': '28'
+      }
+    });
+    // eslint-disable-next-line require-await
+    vi.stubGlobal('fetch', vi.fn(async() => new Response(null, {status: 204})));
+    Config.mockReset();
+    Config.mockReturnValue(mockConfig());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('applies telemetry without fetching origin', async() => {
+    const {worker, ctx} = createWorker();
+    const request = makeRequest('https://shop.example/', {
+      headers: {'user-agent': 'GPTBot/1.0'}
+    });
+
+    const response = await worker.handle(request, originResponse);
+
+    expect(response).toBe(originResponse);
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls.every(([, init]) => Boolean(init))).toBe(true);
+    await ctx.waitUntil.mock.calls[0][0];
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe('https://telemetry.example/d');
+    expect(fetch.mock.calls[0][1]).toBeDefined();
+  });
+
+  it('returns debug curl output for /impactDebug without fetching origin', async() => {
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    Config.mockReturnValue(mockConfig({DEBUG: true, DEBUG_ENDPOINT: '/impactDebug'}));
+
+    const {worker, ctx} = createWorker({IMPACT_AUTH_TOKEN: 'secret'});
+    const response = await worker.handle(
+      makeRequest('https://shop.example/impactDebug', {
+        headers: {'user-agent': 'GPTBot/1.0'}
+      }),
+      originResponse
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(response).not.toBe(originResponse);
+    expect(await response.text()).toContain('curl ');
+    expect(Config).toHaveBeenCalledWith({IMPACT_AUTH_TOKEN: 'secret'});
+  });
+
+  it('returns the caller response when TELEMETRY_APIS is empty', async() => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    Config.mockReturnValue(mockConfig({TELEMETRY_APIS: []}));
+
+    const {worker, ctx} = createWorker();
+    const response = await worker.handle(
+      makeRequest('https://shop.example/', {
+        headers: {'user-agent': 'GPTBot/1.0'}
+      }),
+      originResponse
+    );
+
+    expect(response).toBe(originResponse);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith('No telemetry API URLs provided');
+  });
+
+  it('returns the caller response for a nullish request', async() => {
+    const {worker, ctx} = createWorker();
+    const response = await worker.handle(null, originResponse);
+
+    expect(response).toBe(originResponse);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns the caller response for non-GET requests', async() => {
+    const {worker, ctx} = createWorker();
+    const response = await worker.handle(
+      makeRequest('https://shop.example/', {
+        method: 'POST',
+        headers: {'user-agent': 'GPTBot/1.0'}
+      }),
+      originResponse
+    );
+
+    expect(response).toBe(originResponse);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns the caller response for non-chatbot HTML', async() => {
+    const {worker, ctx} = createWorker();
+    const response = await worker.handle(
+      makeRequest('https://shop.example/', {
+        headers: {'user-agent': 'Mozilla/5.0 Chrome/120.0.0.0'}
+      }),
+      originResponse
+    );
+
+    expect(response).toBe(originResponse);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

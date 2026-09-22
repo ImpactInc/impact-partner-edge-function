@@ -7,6 +7,10 @@ function configWith(apis, overrides = {}) {
   return mockConfig({TELEMETRY_APIS: apis, ...overrides});
 }
 
+function debugEndpointConfig(apis, endpoint = '/impactDebug', overrides = {}) {
+  return configWith(apis, {DEBUG: true, DEBUG_ENDPOINT: endpoint, ...overrides});
+}
+
 describe('buildDebugOutput', () => {
   const payload = {
     accountId: 'test-account',
@@ -94,16 +98,25 @@ describe('debug', () => {
   });
 
   it('returns nothing for a nullish request', () => {
-    expect(debug(null, configWith([]), payload)).toBeUndefined();
+    expect(debug(null, configWith([], {DEBUG: true}), payload)).toBeUndefined();
     // eslint-disable-next-line no-undefined
-    expect(debug(undefined, configWith([]), payload)).toBeUndefined();
+    expect(debug(undefined, configWith([], {DEBUG: true}), payload)).toBeUndefined();
     expect(console.debug).not.toHaveBeenCalled();
   });
 
-  it('logs curl commands for non-/impactDebug paths without replacing the response', () => {
+  it('returns nothing when DEBUG is disabled', () => {
     expect(debug(
-      makeRequest('https://example.com/'),
-      configWith(['https://telemetry.example/d']),
+      makeRequest('https://example.com/impactDebug'),
+      debugEndpointConfig(['https://telemetry.example/d'], '/impactDebug', {DEBUG: false}),
+      payload
+    )).toBeUndefined();
+    expect(console.debug).not.toHaveBeenCalled();
+  });
+
+  it('logs curl commands when DEBUG is enabled and DEBUG_ENDPOINT is unset', () => {
+    expect(debug(
+      makeRequest('https://example.com/impactDebug'),
+      configWith(['https://telemetry.example/d'], {DEBUG: true}),
       payload
     )).toBeUndefined();
 
@@ -112,10 +125,22 @@ describe('debug', () => {
     expect(console.debug).toHaveBeenCalledWith('-----');
   });
 
-  it('returns plain-text curl commands for /impactDebug without logging', async() => {
+  it('logs curl commands for non-debug paths without replacing the response', () => {
+    expect(debug(
+      makeRequest('https://example.com/'),
+      debugEndpointConfig(['https://telemetry.example/d']),
+      payload
+    )).toBeUndefined();
+
+    expect(console.debug).toHaveBeenCalledWith('Impact.com Telemetry Output:');
+    expect(console.debug).toHaveBeenCalledWith(expect.stringContaining('curl '));
+    expect(console.debug).toHaveBeenCalledWith('-----');
+  });
+
+  it('returns plain-text curl commands for DEBUG_ENDPOINT without logging', async() => {
     const response = debug(
       makeRequest('https://example.com/impactDebug'),
-      configWith(['https://telemetry.example/d']),
+      debugEndpointConfig(['https://telemetry.example/d']),
       payload
     );
     const text = await response.text();
@@ -130,10 +155,22 @@ describe('debug', () => {
     expect(console.debug).not.toHaveBeenCalled();
   });
 
-  it('matches /impactDebug with query string and rejects other paths', () => {
+  it('uses a custom DEBUG_ENDPOINT path', async() => {
+    const response = debug(
+      makeRequest('https://example.com/__impact/debug'),
+      debugEndpointConfig(['https://telemetry.example/d'], '/__impact/debug'),
+      payload
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('curl ');
+    expect(console.debug).not.toHaveBeenCalled();
+  });
+
+  it('matches DEBUG_ENDPOINT with a query string and rejects other paths', () => {
     const matched = debug(
       makeRequest('https://example.com/impactDebug?x=1'),
-      configWith(['https://telemetry.example/d']),
+      debugEndpointConfig(['https://telemetry.example/d']),
       payload
     );
     expect(matched.headers.get('Content-Type')).toBe('text/plain;charset=UTF-8');
@@ -141,7 +178,16 @@ describe('debug', () => {
 
     expect(debug(
       makeRequest('https://example.com/impactdebug'),
-      configWith(['https://telemetry.example/d']),
+      debugEndpointConfig(['https://telemetry.example/d']),
+      payload
+    )).toBeUndefined();
+    expect(console.debug).toHaveBeenCalledWith('Impact.com Telemetry Output:');
+  });
+
+  it('does not treat /impactDebug as special when DEBUG_ENDPOINT is a different path', () => {
+    expect(debug(
+      makeRequest('https://example.com/impactDebug'),
+      debugEndpointConfig(['https://telemetry.example/d'], '/other-debug'),
       payload
     )).toBeUndefined();
     expect(console.debug).toHaveBeenCalledWith('Impact.com Telemetry Output:');
@@ -151,7 +197,7 @@ describe('debug', () => {
     const endpoint = withAuthBearerToken('https://telemetry.example/secure', 'real-secret');
     const text = await debug(
       makeRequest('https://example.com/impactDebug'),
-      configWith([endpoint]),
+      debugEndpointConfig([endpoint]),
       payload
     ).text();
 
@@ -166,7 +212,7 @@ describe('debug', () => {
     };
     const text = await debug(
       makeRequest('https://example.com/impactDebug'),
-      configWith([endpoint]),
+      debugEndpointConfig([endpoint]),
       payload
     ).text();
 
@@ -178,7 +224,7 @@ describe('debug', () => {
     const endpoint = noAuth(() => 'not a url');
     const text = await debug(
       makeRequest('https://example.com/impactDebug'),
-      configWith([endpoint]),
+      debugEndpointConfig([endpoint]),
       payload
     ).text();
 
@@ -188,7 +234,7 @@ describe('debug', () => {
   it('joins multiple endpoint commands with blank lines', async() => {
     const text = await debug(
       makeRequest('https://example.com/impactDebug'),
-      configWith([
+      debugEndpointConfig([
         'https://telemetry.example/a',
         'https://telemetry.example/b'
       ]),
@@ -204,7 +250,7 @@ describe('debug', () => {
   it('sets Content-Length to the UTF-8 byte length of the output', async() => {
     const response = debug(
       makeRequest('https://example.com/impactDebug'),
-      configWith(['https://telemetry.example/d']),
+      debugEndpointConfig(['https://telemetry.example/d']),
       payload
     );
     const text = await response.text();
