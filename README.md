@@ -1,18 +1,78 @@
 # Impact.com Cloudflare Edge Function
 
 Welcome to the Impact.com Cloudflare Edge Function! Here you'll have access to the source code, as well as tools for
-local development, testing, and deployment. This Worker sends AI Telemetry data on your behalf to Impact.com when a
+local development, testing, and deployment.
+
+This Worker sends AI Telemetry data on your behalf to Impact.com when a
 chatbot is detected. As the end user, you can run this out of the box by setting the minimal configuration values, or
 if you want to customize the behavior, you can modify the source code and deploy your own version of the Worker.
 
-## Prerequisites
+## Getting and updating this Worker
 
-- Node.js 22.13.0 or later
-- npm
+**Fork this repository** and work from your fork. You control which version is live and when it
+changes.
+
+Choose one of three deployment options:
+
+1. [Manual installation](#manual-installation-in-cloudflare) using Wrangler on your machine.
+2. [Cloudflare Workers Builds](#cloudflare-workers-builds) through the Cloudflare dashboard.
+3. [GitHub Actions](#github-actions) using a workflow in your fork.
+
+### Required deployment configuration
+
+For any deployment option, you need:
+
 - A Cloudflare account with permission to deploy this Worker
-- An Impact.com account ID and telemetry auth token
+- An Impact.com account ID and auth token
 
-## Install
+`src/config.js` reads these bindings from the Worker `env` object. Sensitive values must be Cloudflare Worker secrets,
+not `vars` in `wrangler.toml` or `wrangler.jsonc`.
+
+| Binding                 | Required                    | Secret?     | Purpose                                                                                                                        |
+|-------------------------|-----------------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------|
+| `IMPACT_AUTH_TOKEN`     | Yes, for telemetry          | Yes         | Authentication token sent to `https://trkapi.impact.com/telemetry/crawler-visits`. If unset, the Worker logs an error and never posts. |
+| `IMPACT_ACCOUNT_ID`     | Yes, for a complete payload | Recommended | Impact account ID included on each telemetry event as `accountId`.                                                             |
+
+Set these runtime secrets using either the Cloudflare dashboard or Wrangler; you do not need to use both.
+
+Optional debug settings are covered under [Environment variables](#environment-variables) in Local development.
+
+#### Set secrets in the Cloudflare dashboard
+
+Once the Worker has been created (for example, by the first Workers Builds deployment):
+
+1. In the [Cloudflare dashboard](https://dash.cloudflare.com), go to **Workers & Pages** and select this Worker.
+2. Open **Settings** → **Variables and Secrets** and select **Add**.
+3. Select type **Secret**, enter `IMPACT_AUTH_TOKEN` as the variable name, and enter your Impact auth token as its value.
+4. Select **Add variable** and add `IMPACT_ACCOUNT_ID` as another **Secret**, using your Impact account ID as its value.
+5. Select **Deploy** to apply both secrets.
+
+These are **Worker runtime secrets**, not the **Build variables and secrets** under **Settings** → **Build**.
+Build secrets are available only during the build and do not populate the Worker's runtime `env` bindings.
+See Cloudflare's [dashboard secret instructions](https://developers.cloudflare.com/workers/configuration/secrets/#via-the-dashboard).
+
+#### Set secrets with Wrangler
+
+Using Wrangler, you can set secrets before or after the first Worker deployment. Wrangler prompts for the value; do not pass it on the command line:
+
+```bash
+npx wrangler secret put IMPACT_AUTH_TOKEN
+npx wrangler secret put IMPACT_ACCOUNT_ID
+```
+
+`wrangler secret put` creates a new Worker version and deploys it.
+
+If you use [gradual deployments](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/), use `npx wrangler versions secret put <KEY>` instead, then deploy that version separately.
+
+List configured secrets:
+
+```bash
+npx wrangler secret list
+```
+
+### Manual Installation in Cloudflare
+
+With Node.js 22.13.0 or later and npm installed, install the dependencies:
 
 ```bash
 npm ci
@@ -20,43 +80,57 @@ npm ci
 
 Use `npm i` instead of `npm ci` if you are not working from the lockfile.
 
-Authenticate Wrangler once per machine with `login` or by setting `CLOUDFLARE_API_TOKEN` in your environment. This is
-required for `npm run deploy` and for remote-mode features that talk to your Cloudflare account.
+Authenticate Wrangler using either a Cloudflare API token or interactive login. Authentication is required for
+`npm run deploy` and for remote-mode features that talk to your Cloudflare account.
+
+To use an API token, set `CLOUDFLARE_API_TOKEN` in the shell where you will run Wrangler:
+
+```bash
+export CLOUDFLARE_API_TOKEN="your-cloudflare-api-token"
+```
+
+Use a token with permission to deploy this Worker. Keep it secret: do not commit it or add it as a Worker binding.
+
+Alternatively, use interactive authentication to sign in to Cloudflare through your browser:
 
 ```bash
 npm run login
 ```
 
-## Local development
-
-Create a `.dev.vars` file in the project root with the same names the Worker reads from `env` (see
-[Environment variables](#environment-variables)). Wrangler loads this file for `wrangler dev`. Do not commit it; it is
-in `.gitignore`.
+Deploy the Worker, setting the [required secrets](#required-deployment-configuration) before or after the first deploy:
 
 ```bash
-IMPACT_ACCOUNT_ID=your-impact-account-id
-IMPACT_AUTH_TOKEN=your-impact-auth-token
-IMPACT_DEBUG=true
-IMPACT_DEBUG_ENDPOINT=/impactDebug
+npm run deploy
 ```
 
-Start the local Worker:
+Validate the bundle without publishing:
+
 ```bash
-npm run dev
+npm run build
 ```
 
-This runs `wrangler dev`. Requests are handled locally; origin `fetch(request)` still goes to the URL on the incoming
-request.
+That runs `wrangler deploy --dry-run --outdir dist` and writes `dist/index.js`.
 
-With `IMPACT_DEBUG` enabled, set `IMPACT_DEBUG_ENDPOINT` to a path (for example `/impactDebug`). A chatbot request to
-that path returns the telemetry curl commands as plain text instead of posting. Other chatbot HTML requests log that
-output and still schedule the telemetry post. If `IMPACT_DEBUG_ENDPOINT` is unset, debug only logs; it never replaces
-the response.
+### Cloudflare Workers Builds
 
-Stream production logs after deploy:
-```bash
-npm run tail
-```
+Cloudflare runs the build and deploy commands for you; no local Node.js, npm, or Wrangler installation is required.
+
+To deploy automatically from your fork, in the [Cloudflare dashboard](https://dash.cloudflare.com), go to
+**Compute** → **Workers & Pages** → **Create application** → **Continue with GitHub** and select your fork. Set the build command to `npm ci`
+and the deploy command to `npx wrangler deploy`. Cloudflare then rebuilds and redeploys on every
+push to your fork's `main`.
+
+After the first deployment, [set the required runtime secrets in the dashboard](#set-secrets-in-the-cloudflare-dashboard).
+Complete this step before relying on the Worker to send telemetry.
+
+### GitHub Actions
+
+`.github/workflows/deploy.yml` is a working example. It is manual trigger only.
+Add `CLOUDFLARE_API_TOKEN` as a [repository secret](https://docs.github.com/en/actions/concepts/security/secrets) and `CLOUDFLARE_ACCOUNT_ID` as a repository
+variable, then run it from the Actions tab. Adapt it freely, or move the same three steps
+(`npm ci`, `npm test`, `npx wrangler deploy`) to any other runner.
+
+See Cloudflare's [Workers roles and permissions](https://developers.cloudflare.com/workers/authorization/workers/) for details on required authorization for deploying Cloudflare Workers.
 
 ## Standalone Worker vs Service Bindings
 
@@ -70,9 +144,7 @@ reports eligible chatbot HTML visits.
 
 ### Service binding (another Worker already owns the route)
 
-Cloudflare allows one Worker per route. If the partner already has a Worker, they must not put this
-Worker on the same route. Deploy this Worker **without** a competing public route, then bind it from
-the existing Worker.
+Cloudflare allows one Worker per route. If the route already has a Worker, [Service bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/) can be used to call this Worker from the Worker that owns the route.
 
 Caller `wrangler.toml` (or `wrangler.jsonc`):
 
@@ -112,10 +184,51 @@ Locally, run both Workers so the binding can connect. Either start two `wrangler
 one process with multiple configs (first config is the HTTP-facing Worker):
 
 ```bash
-npx wrangler dev -c ../partner-site/wrangler.toml -c ./wrangler.toml
+npx wrangler dev -c ../your-site/wrangler.toml -c ./wrangler.toml
 ```
 
-## Tests
+## Local development
+
+### Prerequisites
+
+- Node.js 22.13.0 or later
+- npm
+
+### Install
+
+Follow the dependency installation steps in [Manual Installation in Cloudflare](#manual-installation-in-cloudflare).
+Wrangler authentication is only needed for deployment and remote-mode features, not local development.
+
+Create a `.dev.vars` file in the project root with the same names the Worker reads from `env` (see
+[Required configuration](#required-deployment-configuration) and [Environment variables](#environment-variables)). Wrangler loads
+this file for `wrangler dev`. Do not commit it; it is in `.gitignore`.
+
+```bash
+IMPACT_ACCOUNT_ID=your-impact-account-id
+IMPACT_AUTH_TOKEN=your-impact-auth-token
+IMPACT_DEBUG=true
+IMPACT_DEBUG_ENDPOINT=/impactDebug
+```
+
+Start the local Worker:
+```bash
+npm run dev
+```
+
+This runs `wrangler dev`. Requests are handled locally; origin `fetch(request)` still goes to the URL on the incoming
+request.
+
+With `IMPACT_DEBUG` enabled, set `IMPACT_DEBUG_ENDPOINT` to a path (for example `/impactDebug`). A chatbot request to
+that path returns the telemetry curl commands as plain text instead of posting. Other chatbot HTML requests log that
+output and still schedule the telemetry post. If `IMPACT_DEBUG_ENDPOINT` is unset, debug only logs; it never replaces
+the response.
+
+Stream production logs after deploy:
+```bash
+npm run tail
+```
+
+### Tests
 
 ```bash
 npm t
@@ -130,7 +243,7 @@ Watch mode:
 npm run test:watch
 ```
 
-## Coverage
+### Coverage
 
 ```bash
 npm run coverage
@@ -140,44 +253,15 @@ This runs the Node unit tests with V8 coverage over `src/**/*.js`. Text output i
 terminal; HTML and LCOV reports are written to `coverage/`. The Workers-runtime Service Binding
 suite is excluded because coverage instrumentation cannot run inside `workerd`.
 
-## Deploy
+### Environment variables
 
-Set secrets on the deployed Worker before or after the first deploy (see
-[Environment variables](#environment-variables)). Then:
-
-```bash
-npm run deploy
-```
-
-Validate the bundle without publishing:
-
-```bash
-npm run build
-```
-
-That runs `wrangler deploy --dry-run --outdir dist` and writes `dist/index.js`.
-
-`wrangler secret put` creates a new Worker version and deploys it. If you use gradual deployments, use
-`npx wrangler versions secret put <KEY>` instead, then deploy that version separately.
-
-## Environment variables
-
-`src/config.js` reads these bindings from the Worker `env` object. Sensitive values must be Cloudflare Worker secrets,
-not `vars` in `wrangler.jsonc`.
+These optional bindings control debugging. For the credentials needed to send telemetry, see
+[Required configuration](#required-deployment-configuration).
 
 | Binding                 | Required                    | Secret?     | Purpose                                                                                                                        |
 |-------------------------|-----------------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `IMPACT_AUTH_TOKEN`     | Yes, for telemetry          | Yes         | Bearer token sent to `https://trkapi.impact.com/telemetry/crawler-visits`. If unset, the Worker logs an error and never posts. |
-| `IMPACT_ACCOUNT_ID`     | Yes, for a complete payload | Recommended | Impact account ID included on each telemetry event as `accountId`.                                                             |
 | `IMPACT_DEBUG`          | No                          | No          | Enables debug logging and, when `IMPACT_DEBUG_ENDPOINT` is also set, the debug response. Treated as true when the value is `true`, `"true"`, `1`, or `"1"`. |
 | `IMPACT_DEBUG_ENDPOINT` | No                          | No          | Request pathname that returns debug curl output instead of posting telemetry (for example `/impactDebug`). Ignored unless `IMPACT_DEBUG` is true. Empty when unset. |
-
-Set secrets interactively (Wrangler prompts for the value; do not pass it on the command line):
-
-```bash
-npx wrangler secret put IMPACT_AUTH_TOKEN
-npx wrangler secret put IMPACT_ACCOUNT_ID
-```
 
 `IMPACT_DEBUG` and `IMPACT_DEBUG_ENDPOINT` are not sensitive. Prefer a Wrangler variable so you can change it without
 having to store it in a secret. Example in `wrangler.toml`:
@@ -191,32 +275,3 @@ IMPACT_DEBUG_ENDPOINT = "/impactDebug"
 ```
 
 Or set it only in `.dev.vars` for local use.
-
-List configured secrets:
-
-```bash
-npx wrangler secret list
-```
-
-## Getting and updating this Worker
-
-**Fork this repository** and work from your fork. You control which version is live and when it
-changes.
-
-### Deploying from a fork
-
-The `npm run deploy` flow above works from any machine with Wrangler authenticated. Two other
-options avoid running deploys by hand:
-
-**Cloudflare Workers Builds** — in the [Cloudflare dashboard](https://dash.cloudflare.com), go to
-Workers & Pages → Create → Connect to Git and select your fork. Set the build command to `npm ci`
-and the deploy command to `npx wrangler deploy`. Cloudflare then rebuilds and redeploys on every
-push to your fork's `main`.
-
-**GitHub Actions** — `.github/workflows/deploy.yml` is a working example. It is manual trigger only.
-Add `CLOUDFLARE_API_TOKEN` as a repository secret and `CLOUDFLARE_ACCOUNT_ID` as a repository
-variable, then run it from the Actions tab. Adapt it freely, or move the same three steps
-(`npm ci`, `npm test`, `npx wrangler deploy`) to any other runner.
-
-The Cloudflare API token needs Account → Worker Scripts: Edit, plus Zone → Workers Routes: Edit and
-Zone → Zone: Read if you are using a custom domain.
